@@ -56,6 +56,12 @@
                         inset -1px -1px 2px rgba(0,0,0,0.5),
                         0 0 25px 4px var(--glow-color, #fff);
         }
+        .line-clamp-3 {
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3;
+        }
         .modal-backdrop {
             background-color: rgba(0, 0, 0, 0.7);
         }
@@ -90,8 +96,8 @@
 
     <!-- UI Controls -->
     <div class="fixed top-4 left-4 flex flex-col gap-2 z-20">
-         <div class="bg-gray-800 bg-opacity-70 p-2 rounded-lg text-xs">
-            Testovací ID: <span id="userIdDisplay"></span>
+         <div id="userIdContainer" class="bg-gray-800 bg-opacity-70 p-2 rounded-lg text-xs hidden">
+            Vaše ID: <span id="userIdDisplay"></span>
         </div>
     </div>
     
@@ -113,6 +119,10 @@
                         <label for="projectName" class="block text-sm font-medium text-gray-400 mb-1">Název projektu</label>
                         <input type="text" id="projectName" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" required>
                     </div>
+                     <div class="mb-4">
+                        <label for="projectDescription" class="block text-sm font-medium text-gray-400 mb-1">Podrobnější popis</label>
+                        <textarea id="projectDescription" rows="3" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-400 mb-2">Barva</label>
                         <input type="hidden" id="projectColorValue">
@@ -120,17 +130,24 @@
                             <!-- Color swatches will be inserted here by JS -->
                         </div>
                     </div>
-                     <!-- Tasks section -->
-                    <div id="tasksSection" class="hidden">
+                    
+                    <div id="tasksSection">
                         <h4 class="text-lg font-semibold mb-2">Úkoly</h4>
-                        <div id="taskList" class="max-h-60 overflow-y-auto space-y-2 pr-2">
+                        <div id="taskList" class="max-h-60 overflow-y-auto space-y-2 pr-2 mb-3">
                             <!-- Tasks will be rendered here -->
                         </div>
-                        <div class="flex mt-3">
+                        <div class="flex">
                             <input type="text" id="newTaskInput" placeholder="Přidat nový úkol..." class="flex-grow bg-gray-900 border border-gray-600 rounded-l-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <button type="button" id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 rounded-r-md">+</button>
                         </div>
                     </div>
+
+                    <div id="completeSection" class="my-4">
+                        <button type="button" id="completeProjectBtn" class="w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all">
+                            Dokončit projekt
+                        </button>
+                    </div>
+
                     <div class="mt-6 flex justify-between items-center">
                         <button type="button" id="deleteProjectBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Smazat</button>
                         <div class="flex gap-3">
@@ -176,7 +193,6 @@
         let projects = [];
         let selectedProjectsToday = [];
         let lines = [];
-        const testUserId = "11127711116926141346"; // Static ID for testing
         
         const CARD_WIDTH = 128;
         const CARD_HEIGHT = 128;
@@ -189,15 +205,19 @@
         const cancelBtn = document.getElementById('cancelBtn');
         const deleteProjectBtn = document.getElementById('deleteProjectBtn');
         const tasksSection = document.getElementById('tasksSection');
+        const completeSection = document.getElementById('completeSection');
+        const completeProjectBtn = document.getElementById('completeProjectBtn');
         const taskList = document.getElementById('taskList');
         const addTaskBtn = document.getElementById('addTaskBtn');
         const newTaskInput = document.getElementById('newTaskInput');
+        const userIdContainer = document.getElementById('userIdContainer');
         const userIdDisplay = document.getElementById('userIdDisplay');
         const confirmModal = document.getElementById('confirmModal');
         const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
         const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
         const colorPalette = document.getElementById('colorPalette');
         const projectColorValue = document.getElementById('projectColorValue');
+        const projectDescription = document.getElementById('projectDescription');
 
         const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -209,11 +229,15 @@
 
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
-                    userId = testUserId;
-                    userIdDisplay.textContent = userId.substring(0, 12) + '...';
+                    userId = user.uid;
+                    // For debugging, you can show the user ID
+                    // userIdDisplay.textContent = userId.substring(0, 12) + '...';
+                    // userIdContainer.style.display = 'block';
                     await setupFirestoreListeners();
                 } else {
+                    console.log("User not signed in, authenticating...");
                     try {
+                        // In a real environment, __initial_auth_token will be undefined.
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(auth, __initial_auth_token);
                         } else {
@@ -267,13 +291,12 @@
                     card.className = 'project-card p-2 w-32 h-32 flex flex-col items-center justify-end cursor-pointer';
                     card.innerHTML = `
                         <div class="absolute inset-0 flex items-center justify-center text-center p-2">
-                            <h3 class="font-bold text-lg text-white break-words"></h3>
+                            <h3 class="font-bold text-lg text-white break-words line-clamp-3"></h3>
                         </div>
                         <div class="relative w-full text-sm mb-1 px-2">
                             <div class="w-full bg-gray-900 bg-opacity-50 rounded-full h-2">
                                 <div class="progress-bar bg-white h-2 rounded-full transition-all duration-500"></div>
                             </div>
-                            <p class="progress-text text-center text-xs mt-1 text-gray-300"></p>
                         </div>
                     `;
                     workspace.appendChild(card);
@@ -289,12 +312,18 @@
 
                 card.querySelector('h3').textContent = project.name;
 
-                const tasks = project.tasks || [];
-                const completedTasks = tasks.filter(t => t.completed).length;
-                const progress = tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0;
+                let progress = 0;
+                if (project.isCompleted) {
+                    progress = 100;
+                } else {
+                    const tasks = project.tasks || [];
+                    if (tasks.length > 0) {
+                        const completedTasks = tasks.filter(t => t.completed).length;
+                        progress = (completedTasks / tasks.length) * 100;
+                    }
+                }
                 
                 card.querySelector('.progress-bar').style.width = `${progress}%`;
-                card.querySelector('.progress-text').textContent = `${completedTasks} / ${tasks.length}`;
                 
                 const baseColor = project.color || '#3b82f6';
                 const saturation = 50 + (progress / 2);
@@ -391,8 +420,8 @@
                     },
                     move(event) {
                         const target = event.target;
-                        const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-                        const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+                        const x = startPos.x + event.pageX - event.x0;
+                        const y = startPos.y + event.pageY - event.y0;
 
                         target.style.transform = `translate(${x}px, ${y}px) scale(1.08) translateZ(20px)`;
                         target.setAttribute('data-x', x);
@@ -415,30 +444,29 @@
                             }
                         });
                         
+                        let finalX = parseFloat(target.getAttribute('data-x'));
+                        let finalY = parseFloat(target.getAttribute('data-y'));
+
                         if (dropTarget) {
-                            toggleConnection(target.id, dropTarget.id);
-                            // Revert position for connection toggling
-                            target.setAttribute('data-x', startPos.x);
-                            target.setAttribute('data-y', startPos.y);
+                            finalX = startPos.x;
+                            finalY = startPos.y;
+                            setTimeout(() => toggleConnection(target.id, dropTarget.id), 50);
+
                         } else {
-                           // This was a move action, save the new position.
-                           // The current position is already set in the 'move' event.
-                           const finalX = parseFloat(target.getAttribute('data-x'));
-                           const finalY = parseFloat(target.getAttribute('data-y'));
                            const project = projects.find(p => p.id === target.id);
                            if (project) {
                                saveProject({...project, position: {x: finalX, y: finalY}}, project.id);
                            }
                         }
                         
-                        const finalX = parseFloat(target.getAttribute('data-x'));
-                        const finalY = parseFloat(target.getAttribute('data-y'));
+                        target.setAttribute('data-x', finalX);
+                        target.setAttribute('data-y', finalY);
                         target.style.transform = `translate(${finalX}px, ${finalY}px) scale(1) translateZ(0px)`;
                         
                         setTimeout(() => {
                            requestAnimationFrame(updateLinesPosition);
                            updateWorkspaceSize();
-                        }, 50);
+                        }, 100);
                     }
                 },
                 modifiers: [
@@ -516,6 +544,7 @@
                 };
 
                 for (const project of projects) {
+                    if (!project.position) continue;
                     const pPos = project.position;
                     const projectRect = {
                         left: pPos.x, top: pPos.y,
@@ -570,16 +599,34 @@
                 document.getElementById('modalTitle').textContent = 'Upravit projekt';
                 document.getElementById('projectId').value = project.id;
                 document.getElementById('projectName').value = project.name;
+                projectDescription.value = project.description || '';
                 projectColorValue.value = project.color || NEON_COLORS[0];
                 deleteProjectBtn.style.display = 'block';
+                
                 tasksSection.style.display = 'block';
+                completeSection.style.display = 'block';
                 renderTasks(project.id);
-            } else {
+                
+                // Configure completion button
+                if (project.isCompleted) {
+                    completeProjectBtn.textContent = 'Znovu otevřít';
+                    completeProjectBtn.className = 'w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all bg-yellow-500 hover:bg-yellow-600';
+                } else {
+                    completeProjectBtn.textContent = 'Dokončit projekt';
+                    completeProjectBtn.className = 'w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all bg-green-600 hover:bg-green-700';
+                }
+
+            } else { // New Project
                 document.getElementById('modalTitle').textContent = 'Nový projekt';
                 document.getElementById('projectId').value = '';
+                projectDescription.value = '';
                 projectColorValue.value = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
                 deleteProjectBtn.style.display = 'none';
-                tasksSection.style.display = 'none';
+                tasksSection.style.display = 'block';
+                completeSection.style.display = 'block';
+                completeProjectBtn.textContent = 'Dokončit projekt';
+                completeProjectBtn.className = 'w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all bg-green-600 hover:bg-green-700';
+                taskList.innerHTML = '';
             }
             populateColorPalette(projectColorValue.value);
             projectModal.style.display = 'flex';
@@ -596,19 +643,38 @@
             
             const position = existingProject ? existingProject.position : findEmptySpot();
 
+            // Retain completion status unless it's a new project
+            const isCompleted = existingProject ? existingProject.isCompleted : false;
+
             const projectData = {
                 name: document.getElementById('projectName').value,
+                description: projectDescription.value,
                 color: projectColorValue.value,
                 tasks: existingProject ? existingProject.tasks : [],
                 connections: existingProject ? existingProject.connections : [],
-                position: position
+                position: position,
+                isCompleted: isCompleted
             };
 
             await saveProject(projectData, id);
             closeModal();
         }
+        
+        async function handleCompleteProject() {
+            const id = document.getElementById('projectId').value;
+            const project = projects.find(p => p.id === id);
+            if (project) {
+                // Toggle completion status
+                await saveProject({ ...project, isCompleted: !project.isCompleted }, id);
+            }
+            closeModal();
+        }
 
         async function saveProject(data, id = null) {
+            if (!userId) {
+                console.error("No user ID, cannot save project.");
+                return;
+            }
             const docId = id || doc(collection(db, 'dummy')).id;
             const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, docId);
             await setDoc(projectRef, data, { merge: true });
@@ -646,7 +712,7 @@
             const project = projects.find(p => p.id === projectId);
             const newTasks = [...(project.tasks || []), { text, completed: false }];
             
-            await saveProject({ ...project, tasks: newTasks }, projectId);
+            await saveProject({ ...project, tasks: newTasks, isCompleted: false }, projectId);
             newTaskInput.value = '';
             renderTasks(projectId);
         }
@@ -722,6 +788,7 @@
         cancelBtn.addEventListener('click', closeModal);
         projectForm.addEventListener('submit', handleFormSubmit);
         deleteProjectBtn.addEventListener('click', handleDeleteProject);
+        completeProjectBtn.addEventListener('click', handleCompleteProject);
         addTaskBtn.addEventListener('click', handleAddTask);
         newTaskInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); handleAddTask(); }});
         taskList.addEventListener('change', handleTaskToggle);
