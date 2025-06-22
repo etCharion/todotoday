@@ -251,8 +251,13 @@
             if (!userId) return;
             const projectsCollectionPath = `artifacts/${appId}/users/${userId}/projects`;
             onSnapshot(collection(db, projectsCollectionPath), (snapshot) => {
-                projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                renderAll();
+                if (snapshot.empty && !sessionStorage.getItem('sample_project_created')) {
+                    createSampleProject();
+                    sessionStorage.setItem('sample_project_created', 'true');
+                } else {
+                    projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderAll();
+                }
             });
 
             const today = getTodayDateString();
@@ -261,6 +266,22 @@
                 selectedProjectsToday = doc.exists() ? doc.data().selectedProjectIds : [];
                 renderProjects();
             });
+        }
+
+        async function createSampleProject() {
+            const sampleProject = {
+                name: 'Vítejte! Dvojklikem mě upravíte.',
+                description: 'Toto je ukázkový projekt. Můžete ho smazat, nebo si ho upravit podle sebe. Přetáhněte mě na jiný projekt a propojíte nás!',
+                color: '#39FF14',
+                tasks: [
+                    { text: 'Vyzkoušejte mě označit kliknutím.', completed: false },
+                    { text: 'Přetáhněte mě na jiné místo.', completed: false }
+                ],
+                connections: [],
+                position: { x: 20, y: 20 },
+                isCompleted: false
+            };
+            await saveProject(sampleProject);
         }
 
         // --- RENDERING & LAYOUT ---
