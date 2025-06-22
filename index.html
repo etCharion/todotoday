@@ -230,14 +230,10 @@
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
-                    // For debugging, you can show the user ID
-                    // userIdDisplay.textContent = userId.substring(0, 12) + '...';
-                    // userIdContainer.style.display = 'block';
                     await setupFirestoreListeners();
                 } else {
                     console.log("User not signed in, authenticating...");
                     try {
-                        // In a real environment, __initial_auth_token will be undefined.
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                             await signInWithCustomToken(auth, __initial_auth_token);
                         } else {
@@ -532,9 +528,13 @@
         function findEmptySpot() {
             const PADDING = 20;
             const GRID_STEP = CARD_WIDTH + PADDING;
-            const workspaceWidth = workspace.clientWidth;
+            const workspaceWidth = window.innerWidth; // Use window.innerWidth for reliability
 
             let testPos = { x: PADDING, y: PADDING + window.scrollY };
+
+            if (projects.length === 0) {
+                 return testPos;
+            }
 
             while (true) {
                 let overlap = false;
@@ -641,7 +641,7 @@
             const id = document.getElementById('projectId').value;
             const existingProject = projects.find(p => p.id === id);
             
-            const position = existingProject ? existingProject.position : findEmptySpot();
+            const position = existingProject ? existingProject.position : (findEmptySpot() || {x: 20, y: 20});
 
             // Retain completion status unless it's a new project
             const isCompleted = existingProject ? existingProject.isCompleted : false;
