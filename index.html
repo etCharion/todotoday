@@ -182,17 +182,19 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIG & STATE ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {"apiKey":"AIzaSyAUwz2LZF630nWTo0YOAu-g01Dmsap_lqY","authDomain":"todotoday-4ca19.firebaseapp.com","projectId":"todotoday-4ca19","storageBucket":"todotoday-4ca19.appspot.com","messagingSenderId":"893736456723","appId":"1:893736456723:web:46513bdb503b29238ba5e6"};
+        const firebaseConfig = {"apiKey":"AIzaSyAUwz2LZF630nWTo0YOAu-g01Dmsap_lqY","authDomain":"todotoday-4ca19.firebaseapp.com","projectId":"todotoday-4ca19","storageBucket":"todotoday-4ca19.firebasestorage.app","messagingSenderId":"893736456723","appId":"1:893736456723:web:46513bdb503b29238ba5e6"};
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-project-weaver';
         
         let app, auth, db, userId;
         let projects = [];
         let selectedProjectsToday = [];
         let lines = [];
+        let unsubscribeProjects = () => {};
+        let unsubscribeSelections = () => {};
         
         const CARD_WIDTH = 128;
         const CARD_HEIGHT = 128;
@@ -228,19 +230,18 @@
             db = getFirestore(app);
 
             onAuthStateChanged(auth, async (user) => {
+                unsubscribeProjects();
+                unsubscribeSelections();
+
                 if (user) {
                     userId = user.uid;
                     await setupFirestoreListeners();
                 } else {
-                    console.log("User not signed in, authenticating...");
+                    console.log("User not signed in, trying to sign in anonymously...");
                     try {
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        await signInAnonymously(auth);
                     } catch (error) {
-                        console.error("Authentication failed:", error);
+                        console.error("Anonymous sign-in failed:", error);
                     }
                 }
             });
@@ -250,26 +251,25 @@
         async function setupFirestoreListeners() {
             if (!userId) return;
             const projectsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/projects`);
-
-            // One-time check for initial setup
+            const selectionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/selections`);
+            
             try {
                 const initialSnapshot = await getDocs(projectsCollectionRef);
                 if (initialSnapshot.empty) {
                     await createSampleProject();
                 }
             } catch (error) {
-                console.error("Error fetching initial projects:", error);
+                console.error("Error during initial project check:", error);
             }
 
-            // Real-time listener for all subsequent changes
-            onSnapshot(projectsCollectionRef, (snapshot) => {
+            unsubscribeProjects = onSnapshot(projectsCollectionRef, (snapshot) => {
                 projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 renderAll();
             });
 
             const today = getTodayDateString();
-            const selectionRef = doc(db, `artifacts/${appId}/users/${userId}/selections`, today);
-            onSnapshot(selectionRef, (doc) => {
+            const selectionRef = doc(selectionsCollectionRef, today);
+            unsubscribeSelections = onSnapshot(selectionRef, (doc) => {
                 selectedProjectsToday = doc.exists() ? doc.data().selectedProjectIds : [];
                 renderProjects();
             });
