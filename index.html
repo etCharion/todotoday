@@ -183,7 +183,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIG & STATE ---
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {"apiKey":"AIzaSyAUwz2LZF630nWTo0YOAu-g01Dmsap_lqY","authDomain":"todotoday-4ca19.firebaseapp.com","projectId":"todotoday-4ca19","storageBucket":"todotoday-4ca19.appspot.com","messagingSenderId":"893736456723","appId":"1:893736456723:web:46513bdb503b29238ba5e6"};
@@ -249,15 +249,22 @@
         // --- FIRESTORE LISTENERS ---
         async function setupFirestoreListeners() {
             if (!userId) return;
-            const projectsCollectionPath = `artifacts/${appId}/users/${userId}/projects`;
-            onSnapshot(collection(db, projectsCollectionPath), (snapshot) => {
-                if (snapshot.empty && !sessionStorage.getItem('sample_project_created')) {
-                    createSampleProject();
-                    sessionStorage.setItem('sample_project_created', 'true');
-                } else {
-                    projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    renderAll();
+            const projectsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/projects`);
+
+            // One-time check for initial setup
+            try {
+                const initialSnapshot = await getDocs(projectsCollectionRef);
+                if (initialSnapshot.empty) {
+                    await createSampleProject();
                 }
+            } catch (error) {
+                console.error("Error fetching initial projects:", error);
+            }
+
+            // Real-time listener for all subsequent changes
+            onSnapshot(projectsCollectionRef, (snapshot) => {
+                projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderAll();
             });
 
             const today = getTodayDateString();
