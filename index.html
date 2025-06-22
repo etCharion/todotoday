@@ -10,7 +10,7 @@
     <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
     <style>
         :root {
-            --bg-color: #111827;
+            --bg-color: #000000; /* Changed to black */
             --surface-color: #1f2937;
             --primary-color: #3b82f6;
             --text-color: #d1d5db;
@@ -142,15 +142,10 @@
                         </div>
                     </div>
 
-                    <div id="completeSection" class="my-4">
-                        <button type="button" id="completeProjectBtn" class="w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all">
-                            Dokončit projekt
-                        </button>
-                    </div>
-
                     <div class="mt-6 flex justify-between items-center">
                         <button type="button" id="deleteProjectBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Smazat</button>
                         <div class="flex gap-3">
+                             <button type="button" id="completeProjectBtn" class="text-white font-bold py-2 px-4 rounded-md hidden"></button>
                             <button type="button" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md" id="cancelBtn">Zrušit</button>
                             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Uložit</button>
                         </div>
@@ -207,7 +202,6 @@
         const cancelBtn = document.getElementById('cancelBtn');
         const deleteProjectBtn = document.getElementById('deleteProjectBtn');
         const tasksSection = document.getElementById('tasksSection');
-        const completeSection = document.getElementById('completeSection');
         const completeProjectBtn = document.getElementById('completeProjectBtn');
         const taskList = document.getElementById('taskList');
         const addTaskBtn = document.getElementById('addTaskBtn');
@@ -630,19 +624,19 @@
                 projectDescription.value = project.description || '';
                 projectColorValue.value = project.color || NEON_COLORS[0];
                 deleteProjectBtn.style.display = 'block';
+                completeProjectBtn.style.display = 'block';
                 
                 tasksSection.style.display = 'block';
-                completeSection.style.display = 'block';
-                renderTasks(project.id);
                 
                 // Configure completion button
                 if (project.isCompleted) {
                     completeProjectBtn.textContent = 'Znovu otevřít';
-                    completeProjectBtn.className = 'w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all bg-yellow-500 hover:bg-yellow-600';
+                    completeProjectBtn.className = 'text-white font-bold py-2 px-4 rounded-md bg-yellow-500 hover:bg-yellow-600';
                 } else {
-                    completeProjectBtn.textContent = 'Dokončit projekt';
-                    completeProjectBtn.className = 'w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all bg-green-600 hover:bg-green-700';
+                    completeProjectBtn.textContent = 'Dokončit';
+                    completeProjectBtn.className = 'text-white font-bold py-2 px-4 rounded-md bg-green-600 hover:bg-green-700';
                 }
+                 renderTasks(project.id);
 
             } else { // New Project
                 document.getElementById('modalTitle').textContent = 'Nový projekt';
@@ -650,10 +644,8 @@
                 projectDescription.value = '';
                 projectColorValue.value = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
                 deleteProjectBtn.style.display = 'none';
+                completeProjectBtn.style.display = 'none';
                 tasksSection.style.display = 'block';
-                completeSection.style.display = 'block';
-                completeProjectBtn.textContent = 'Dokončit projekt';
-                completeProjectBtn.className = 'w-full text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-all bg-green-600 hover:bg-green-700';
                 taskList.innerHTML = '';
             }
             populateColorPalette(projectColorValue.value);
