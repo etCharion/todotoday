@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Weaver</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/leader-line-new@1.1.9/leader-line.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #111827;
+            --surface-color: #1f2937;
+            --primary-color: #3b82f6;
+            --text-color: #d1d5db;
+            --text-muted-color: #9ca3af;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overscroll-behavior: none;
+            perspective: 1000px;
+        }
+        #workspace {
+            position: relative;
+            width: 100%;
+            min-height: 100vh;
+            overflow: hidden; /* Hide horizontal overflow */
+        }
+        .project-card {
+            touch-action: none;
+            user-select: none;
+            position: absolute;
+            transform-style: preserve-3d;
+            background-color: var(--surface-color);
+            border-radius: 20px;
+            box-shadow: 7px 7px 15px rgba(0,0,0,0.35), 
+                        inset 1px 1px 2px rgba(255,255,255,0.1), 
+                        inset -1px -1px 2px rgba(0,0,0,0.5);
+            transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), box-shadow 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), background-color 0.5s ease;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .project-card.dragging {
+            z-index: 100;
+        }
+        .project-card:hover {
+            transform: scale(1.08) translateZ(20px);
+        }
+        .project-card.selected {
+             box-shadow: 7px 7px 15px rgba(0,0,0,0.35), 
+                        inset 1px 1px 2px rgba(255,255,255,0.1), 
+                        inset -1px -1px 2px rgba(0,0,0,0.5),
+                        0 0 25px 4px var(--glow-color, #fff);
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+        .leader-line {
+            transition: all 0.3s ease-in-out;
+        }
+        .task-list-item input:checked + span {
+            text-decoration: line-through;
+            color: var(--text-muted-color);
+        }
+        .color-swatch {
+            width: 100%;
+            padding-top: 100%; /* Aspect ratio 1:1 */
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 2px solid transparent;
+        }
+        .color-swatch.selected {
+            transform: scale(1.1);
+            border-color: white;
+            box-shadow: 0 0 10px white;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Workspace -->
+    <div id="workspace">
+        <!-- Project cards will be appended here -->
+    </div>
+
+    <!-- UI Controls -->
+    <div class="fixed top-4 left-4 flex flex-col gap-2 z-20">
+         <div class="bg-gray-800 bg-opacity-70 p-2 rounded-lg text-xs">
+            Testovací ID: <span id="userIdDisplay"></span>
+        </div>
+    </div>
+    
+    <div class="fixed bottom-4 left-1/2 -translate-x-1/2 w-11/12 max-w-md z-20">
+         <button id="addProjectBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform transform hover:scale-105 flex items-center justify-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+            <span>Přidat projekt</span>
+        </button>
+    </div>
+
+    <!-- Add/Edit Project Modal -->
+    <div id="projectModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-surface-color rounded-lg shadow-xl w-full max-w-md m-4">
+            <div class="p-6">
+                <h3 class="text-xl font-semibold mb-4" id="modalTitle">Nový projekt</h3>
+                <form id="projectForm">
+                    <input type="hidden" id="projectId">
+                    <div class="mb-4">
+                        <label for="projectName" class="block text-sm font-medium text-gray-400 mb-1">Název projektu</label>
+                        <input type="text" id="projectName" class="w-full bg-gray-900 border border-gray-600 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-400 mb-2">Barva</label>
+                        <input type="hidden" id="projectColorValue">
+                        <div id="colorPalette" class="grid grid-cols-8 sm:grid-cols-10 gap-2">
+                            <!-- Color swatches will be inserted here by JS -->
+                        </div>
+                    </div>
+                     <!-- Tasks section -->
+                    <div id="tasksSection" class="hidden">
+                        <h4 class="text-lg font-semibold mb-2">Úkoly</h4>
+                        <div id="taskList" class="max-h-60 overflow-y-auto space-y-2 pr-2">
+                            <!-- Tasks will be rendered here -->
+                        </div>
+                        <div class="flex mt-3">
+                            <input type="text" id="newTaskInput" placeholder="Přidat nový úkol..." class="flex-grow bg-gray-900 border border-gray-600 rounded-l-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <button type="button" id="addTaskBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 rounded-r-md">+</button>
+                        </div>
+                    </div>
+                    <div class="mt-6 flex justify-between items-center">
+                        <button type="button" id="deleteProjectBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md hidden">Smazat</button>
+                        <div class="flex gap-3">
+                            <button type="button" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md" id="cancelBtn">Zrušit</button>
+                            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">Uložit</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="fixed inset-0 z-50 items-center justify-center hidden modal-backdrop">
+        <div class="bg-surface-color rounded-lg shadow-xl w-full max-w-sm m-4">
+            <div class="p-6 text-center">
+                <svg class="mx-auto mb-4 text-gray-400 w-12 h-12" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20">
+                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 11V6m0 8h.01M19 10a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+                </svg>
+                <h3 class="mb-5 text-lg font-normal text-gray-400" id="confirmModalText">Opravdu si přejete smazat tento projekt?</h3>
+                <button id="confirmDeleteBtn" type="button" class="text-white bg-red-600 hover:bg-red-800 focus:ring-4 focus:outline-none focus:ring-red-300 dark:focus:ring-red-800 font-medium rounded-lg text-sm inline-flex items-center px-5 py-2.5 text-center me-2">
+                    Ano, smazat
+                </button>
+                <button id="cancelDeleteBtn" type="button" class="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-gray-200 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900 focus:z-10 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-500 dark:hover:text-white dark:hover:bg-gray-600 dark:focus:ring-gray-600">
+                    Zrušit
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIG & STATE ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {"apiKey":"AIzaSyAUwz2LZF630nWTo0YOAu-g01Dmsap_lqY","authDomain":"todotoday-4ca19.firebaseapp.com","projectId":"todotoday-4ca19","storageBucket":"todotoday-4ca19.appspot.com","messagingSenderId":"893736456723","appId":"1:893736456723:web:46513bdb503b29238ba5e6"};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-project-weaver';
+        
+        let app, auth, db, userId;
+        let projects = [];
+        let selectedProjectsToday = [];
+        let lines = [];
+        const testUserId = "11127711116926141346"; // Static ID for testing
+        
+        const CARD_WIDTH = 128;
+        const CARD_HEIGHT = 128;
+        const NEON_COLORS = ['#39FF14', '#FF073A', '#0FF0FC', '#F5D300', '#FF1493', '#FF5F1F', '#DFFF00', '#7FFF00', '#B026FF', '#FD5F00', '#00FF7F', '#FF00FF', '#00FFFF', '#FF4500', '#CFFF04', '#6F00FF', '#FF6EC7', '#4D4DFF', '#FFFFFF', '#FAFAFA'];
+
+        const workspace = document.getElementById('workspace');
+        const projectModal = document.getElementById('projectModal');
+        const projectForm = document.getElementById('projectForm');
+        const addProjectBtn = document.getElementById('addProjectBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const deleteProjectBtn = document.getElementById('deleteProjectBtn');
+        const tasksSection = document.getElementById('tasksSection');
+        const taskList = document.getElementById('taskList');
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        const newTaskInput = document.getElementById('newTaskInput');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        const colorPalette = document.getElementById('colorPalette');
+        const projectColorValue = document.getElementById('projectColorValue');
+
+        const getTodayDateString = () => new Date().toISOString().split('T')[0];
+
+        // --- FIREBASE INITIALIZATION ---
+        async function initializeFirebase() {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = testUserId;
+                    userIdDisplay.textContent = userId.substring(0, 12) + '...';
+                    await setupFirestoreListeners();
+                } else {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Authentication failed:", error);
+                    }
+                }
+            });
+        }
+        
+        // --- FIRESTORE LISTENERS ---
+        async function setupFirestoreListeners() {
+            if (!userId) return;
+            const projectsCollectionPath = `artifacts/${appId}/users/${userId}/projects`;
+            onSnapshot(collection(db, projectsCollectionPath), (snapshot) => {
+                projects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                renderAll();
+            });
+
+            const today = getTodayDateString();
+            const selectionRef = doc(db, `artifacts/${appId}/users/${userId}/selections`, today);
+            onSnapshot(selectionRef, (doc) => {
+                selectedProjectsToday = doc.exists() ? doc.data().selectedProjectIds : [];
+                renderProjects();
+            });
+        }
+
+        // --- RENDERING & LAYOUT ---
+        function renderAll() {
+            renderProjects();
+            setTimeout(() => {
+                renderLines();
+                updateWorkspaceSize();
+            }, 50);
+        }
+        
+        function renderProjects() {
+            Array.from(workspace.children).forEach(child => {
+                if(child.classList.contains('project-card') && !projects.find(p => p.id === child.id)) {
+                    child.remove();
+                }
+            });
+
+            projects.forEach(project => {
+                let card = document.getElementById(project.id);
+                if (!card) {
+                    card = document.createElement('div');
+                    card.id = project.id;
+                    card.className = 'project-card p-2 w-32 h-32 flex flex-col items-center justify-end cursor-pointer';
+                    card.innerHTML = `
+                        <div class="absolute inset-0 flex items-center justify-center text-center p-2">
+                            <h3 class="font-bold text-lg text-white break-words"></h3>
+                        </div>
+                        <div class="relative w-full text-sm mb-1 px-2">
+                            <div class="w-full bg-gray-900 bg-opacity-50 rounded-full h-2">
+                                <div class="progress-bar bg-white h-2 rounded-full transition-all duration-500"></div>
+                            </div>
+                            <p class="progress-text text-center text-xs mt-1 text-gray-300"></p>
+                        </div>
+                    `;
+                    workspace.appendChild(card);
+                    setupCardInteractions(card);
+                }
+
+                const posX = project.position?.x || 50;
+                const posY = project.position?.y || 50;
+                
+                card.style.transform = `translate(${posX}px, ${posY}px) scale(1) translateZ(0px)`;
+                card.setAttribute('data-x', posX);
+                card.setAttribute('data-y', posY);
+
+                card.querySelector('h3').textContent = project.name;
+
+                const tasks = project.tasks || [];
+                const completedTasks = tasks.filter(t => t.completed).length;
+                const progress = tasks.length > 0 ? (completedTasks / tasks.length) * 100 : 0;
+                
+                card.querySelector('.progress-bar').style.width = `${progress}%`;
+                card.querySelector('.progress-text').textContent = `${completedTasks} / ${tasks.length}`;
+                
+                const baseColor = project.color || '#3b82f6';
+                const saturation = 50 + (progress / 2);
+                const mainColor = changeColorSaturation(baseColor, saturation);
+                card.style.backgroundColor = mainColor;
+
+                const isSelected = selectedProjectsToday.includes(project.id);
+                card.classList.toggle('selected', isSelected);
+                if (isSelected) {
+                    card.style.setProperty('--glow-color', mainColor);
+                } else {
+                    card.style.removeProperty('--glow-color');
+                }
+            });
+        }
+        
+        function renderLines() {
+            lines.forEach(line => line.remove());
+            lines = [];
+            document.querySelectorAll('svg.leader-line').forEach(svg => svg.remove());
+
+            const drawnConnections = new Set();
+
+            projects.forEach(project => {
+                if (project.connections && project.connections.length > 0) {
+                    project.connections.forEach(toId => {
+                        const fromEl = document.getElementById(project.id);
+                        const toEl = document.getElementById(toId);
+                        
+                        const connectionKey1 = `${project.id}-${toId}`;
+                        const connectionKey2 = `${toId}-${project.id}`;
+                        if (fromEl && toEl && !drawnConnections.has(connectionKey1) && !drawnConnections.has(connectionKey2)) {
+                             const line = new LeaderLine(
+                                LeaderLine.areaAnchor(fromEl, {color: 'rgba(0,0,0,0)', radius: 0}),
+                                LeaderLine.areaAnchor(toEl, {color: 'rgba(0,0,0,0)', radius: 0}),
+                                {
+                                    color: 'rgba(156, 163, 175, 0.7)',
+                                    size: 3,
+                                    path: 'fluid',
+                                    endPlug: 'arrow1'
+                                }
+                            );
+                            lines.push(line);
+                            drawnConnections.add(connectionKey1);
+                        }
+                    });
+                }
+            });
+        }
+        
+        function updateLinesPosition() {
+            lines.forEach(line => {
+                try { line.position(); } catch (e) { /* ignore error */ }
+            });
+        }
+        
+        function updateWorkspaceSize() {
+            const PADDING_BOTTOM = 150;
+            if (projects.length === 0) {
+                workspace.style.height = '100vh';
+                return;
+            }
+
+            let max_y = 0;
+            projects.forEach(p => {
+                if (p.position && p.position.y > max_y) {
+                    max_y = p.position.y;
+                }
+            });
+
+            const requiredHeight = max_y + CARD_HEIGHT + PADDING_BOTTOM;
+            const currentWindowHeight = window.innerHeight;
+            workspace.style.height = `${Math.max(requiredHeight, currentWindowHeight)}px`;
+        }
+
+        // --- INTERACTIONS & COLLISION ---
+        function checkOverlap(rect1, rect2) {
+            return !(rect1.right < rect2.left || 
+                     rect1.left > rect2.right || 
+                     rect1.bottom < rect2.top || 
+                     rect1.top > rect2.bottom);
+        }
+
+        function setupCardInteractions(card) {
+             let startPos = { x: 0, y: 0 };
+
+             interact(card).draggable({
+                listeners: {
+                    start(event) {
+                        const target = event.target;
+                        target.classList.add('dragging');
+                        startPos.x = parseFloat(target.getAttribute('data-x')) || 0;
+                        startPos.y = parseFloat(target.getAttribute('data-y')) || 0;
+                    },
+                    move(event) {
+                        const target = event.target;
+                        const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+                        const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+
+                        target.style.transform = `translate(${x}px, ${y}px) scale(1.08) translateZ(20px)`;
+                        target.setAttribute('data-x', x);
+                        target.setAttribute('data-y', y);
+                        
+                        requestAnimationFrame(updateLinesPosition);
+                    },
+                    end(event) {
+                        const target = event.target;
+                        target.classList.remove('dragging');
+                        
+                        const targetRect = target.getBoundingClientRect();
+                        let dropTarget = null;
+
+                        document.querySelectorAll('.project-card').forEach(otherCard => {
+                            if (otherCard.id === target.id) return;
+                            const otherRect = otherCard.getBoundingClientRect();
+                            if (checkOverlap(targetRect, otherRect)) {
+                                dropTarget = otherCard;
+                            }
+                        });
+                        
+                        if (dropTarget) {
+                            toggleConnection(target.id, dropTarget.id);
+                            // Revert position for connection toggling
+                            target.setAttribute('data-x', startPos.x);
+                            target.setAttribute('data-y', startPos.y);
+                        } else {
+                           // This was a move action, save the new position.
+                           // The current position is already set in the 'move' event.
+                           const finalX = parseFloat(target.getAttribute('data-x'));
+                           const finalY = parseFloat(target.getAttribute('data-y'));
+                           const project = projects.find(p => p.id === target.id);
+                           if (project) {
+                               saveProject({...project, position: {x: finalX, y: finalY}}, project.id);
+                           }
+                        }
+                        
+                        const finalX = parseFloat(target.getAttribute('data-x'));
+                        const finalY = parseFloat(target.getAttribute('data-y'));
+                        target.style.transform = `translate(${finalX}px, ${finalY}px) scale(1) translateZ(0px)`;
+                        
+                        setTimeout(() => {
+                           requestAnimationFrame(updateLinesPosition);
+                           updateWorkspaceSize();
+                        }, 50);
+                    }
+                },
+                modifiers: [
+                    interact.modifiers.restrictRect({
+                        restriction: 'parent',
+                    })
+                ]
+            });
+            
+            interact(card).on('tap', function (event) {
+                handleSelectProject(card.id);
+            });
+
+            card.addEventListener('dblclick', (e) => {
+                openModal(card.id);
+            });
+        }
+        
+        async function handleSelectProject(projectId) {
+            const newSelection = [...selectedProjectsToday];
+            const index = newSelection.indexOf(projectId);
+
+            if (index > -1) {
+                newSelection.splice(index, 1);
+            } else {
+                if (newSelection.length < 3) {
+                    newSelection.push(projectId);
+                } else {
+                    console.log("Maximum 3 projects can be selected.");
+                    return;
+                }
+            }
+
+            const today = getTodayDateString();
+            const selectionRef = doc(db, `artifacts/${appId}/users/${userId}/selections`, today);
+            await setDoc(selectionRef, { selectedProjectIds: newSelection });
+        }
+
+        async function toggleConnection(id1, id2) {
+            const project1 = projects.find(p => p.id === id1);
+            const project2 = projects.find(p => p.id === id2);
+            if (!project1 || !project2) return;
+
+            const connections1 = project1.connections || [];
+            if (connections1.includes(id2)) {
+                const updatedConnections = connections1.filter(id => id !== id2);
+                await saveProject({ ...project1, connections: updatedConnections }, id1);
+                return;
+            }
+
+            const connections2 = project2.connections || [];
+            if (connections2.includes(id1)) {
+                const updatedConnections = connections2.filter(id => id !== id1);
+                await saveProject({ ...project2, connections: updatedConnections }, id2);
+                return;
+            }
+            
+            const updatedConnections = [...connections1, id2];
+            await saveProject({ ...project1, connections: updatedConnections }, id1);
+        }
+
+        // --- MODAL & FORM LOGIC ---
+        function findEmptySpot() {
+            const PADDING = 20;
+            const GRID_STEP = CARD_WIDTH + PADDING;
+            const workspaceWidth = workspace.clientWidth;
+
+            let testPos = { x: PADDING, y: PADDING + window.scrollY };
+
+            while (true) {
+                let overlap = false;
+                const testRect = {
+                    left: testPos.x, top: testPos.y,
+                    right: testPos.x + CARD_WIDTH, bottom: testPos.y + CARD_HEIGHT
+                };
+
+                for (const project of projects) {
+                    const pPos = project.position;
+                    const projectRect = {
+                        left: pPos.x, top: pPos.y,
+                        right: pPos.x + CARD_WIDTH, bottom: pPos.y + CARD_HEIGHT
+                    };
+
+                    if (checkOverlap(testRect, projectRect)) {
+                        overlap = true;
+                        break;
+                    }
+                }
+
+                if (!overlap) return testPos;
+
+                testPos.x += GRID_STEP;
+                if (testPos.x + CARD_WIDTH > workspaceWidth) {
+                    testPos.x = PADDING;
+                    testPos.y += GRID_STEP;
+                }
+            }
+        }
+
+        function populateColorPalette(selectedColor) {
+            colorPalette.innerHTML = '';
+            NEON_COLORS.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = 'color-swatch';
+                swatch.style.backgroundColor = color;
+                swatch.dataset.color = color;
+                if (color.toLowerCase() === selectedColor.toLowerCase()) {
+                    swatch.classList.add('selected');
+                }
+                colorPalette.appendChild(swatch);
+            });
+        }
+        
+        colorPalette.addEventListener('click', (e) => {
+            if (e.target.classList.contains('color-swatch')) {
+                const selected = colorPalette.querySelector('.selected');
+                if (selected) {
+                    selected.classList.remove('selected');
+                }
+                e.target.classList.add('selected');
+                projectColorValue.value = e.target.dataset.color;
+            }
+        });
+
+        function openModal(id = null) {
+            projectForm.reset();
+            if (id) {
+                const project = projects.find(p => p.id === id);
+                document.getElementById('modalTitle').textContent = 'Upravit projekt';
+                document.getElementById('projectId').value = project.id;
+                document.getElementById('projectName').value = project.name;
+                projectColorValue.value = project.color || NEON_COLORS[0];
+                deleteProjectBtn.style.display = 'block';
+                tasksSection.style.display = 'block';
+                renderTasks(project.id);
+            } else {
+                document.getElementById('modalTitle').textContent = 'Nový projekt';
+                document.getElementById('projectId').value = '';
+                projectColorValue.value = NEON_COLORS[Math.floor(Math.random() * NEON_COLORS.length)];
+                deleteProjectBtn.style.display = 'none';
+                tasksSection.style.display = 'none';
+            }
+            populateColorPalette(projectColorValue.value);
+            projectModal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            projectModal.style.display = 'none';
+        }
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('projectId').value;
+            const existingProject = projects.find(p => p.id === id);
+            
+            const position = existingProject ? existingProject.position : findEmptySpot();
+
+            const projectData = {
+                name: document.getElementById('projectName').value,
+                color: projectColorValue.value,
+                tasks: existingProject ? existingProject.tasks : [],
+                connections: existingProject ? existingProject.connections : [],
+                position: position
+            };
+
+            await saveProject(projectData, id);
+            closeModal();
+        }
+
+        async function saveProject(data, id = null) {
+            const docId = id || doc(collection(db, 'dummy')).id;
+            const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, docId);
+            await setDoc(projectRef, data, { merge: true });
+        }
+        
+        function handleDeleteProject() {
+            confirmModal.style.display = 'flex';
+        }
+
+        // --- TASK LOGIC ---
+        function renderTasks(projectId) {
+            const project = projects.find(p => p.id === projectId);
+            taskList.innerHTML = '';
+            if (!project || !project.tasks) return;
+
+            project.tasks.forEach((task, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex items-center bg-gray-800 p-2 rounded-md';
+                li.innerHTML = `
+                    <label class="flex-grow flex items-center cursor-pointer">
+                        <input type="checkbox" data-task-index="${index}" class="form-checkbox h-5 w-5 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" ${task.completed ? 'checked' : ''}>
+                        <span class="ml-3 text-white">${task.text}</span>
+                    </label>
+                    <button data-task-index="${index}" class="delete-task-btn text-gray-500 hover:text-red-500">&times;</button>
+                `;
+                taskList.appendChild(li);
+            });
+        }
+        
+        async function handleAddTask() {
+            const projectId = document.getElementById('projectId').value;
+            const text = newTaskInput.value.trim();
+            if (!text || !projectId) return;
+
+            const project = projects.find(p => p.id === projectId);
+            const newTasks = [...(project.tasks || []), { text, completed: false }];
+            
+            await saveProject({ ...project, tasks: newTasks }, projectId);
+            newTaskInput.value = '';
+            renderTasks(projectId);
+        }
+
+        async function handleTaskToggle(e) {
+            if (e.target.type !== 'checkbox') return;
+            const projectId = document.getElementById('projectId').value;
+            const index = parseInt(e.target.dataset.taskIndex, 10);
+            
+            const project = projects.find(p => p.id === projectId);
+            const newTasks = [...project.tasks];
+            newTasks[index].completed = e.target.checked;
+            
+            await saveProject({ ...project, tasks: newTasks }, projectId);
+            renderTasks(projectId);
+        }
+        
+        async function handleTaskDelete(e) {
+             if (!e.target.classList.contains('delete-task-btn')) return;
+             const projectId = document.getElementById('projectId').value;
+             const index = parseInt(e.target.dataset.taskIndex, 10);
+
+             const project = projects.find(p => p.id === projectId);
+             const newTasks = project.tasks.filter((_, i) => i !== index);
+
+             await saveProject({ ...project, tasks: newTasks }, projectId);
+             renderTasks(projectId);
+        }
+
+
+        // --- UTILITY ---
+        function hexToRgb(hex) {
+            let r = 0, g = 0, b = 0;
+            if (hex.length == 4) {
+                r = "0x" + hex[1] + hex[1];
+                g = "0x" + hex[2] + hex[2];
+                b = "0x" + hex[3] + hex[3];
+            } else if (hex.length == 7) {
+                r = "0x" + hex[1] + hex[2];
+                g = "0x" + hex[3] + hex[4];
+                b = "0x" + hex[5] + hex[6];
+            }
+            return { r: +r, g: +g, b: +b };
+        }
+
+        function rgbToHsl({r, g, b}) {
+            r /= 255; g /= 255; b /= 255;
+            let max = Math.max(r, g, b), min = Math.min(r, g, b);
+            let h, s, l = (max + min) / 2;
+            if (max == min) {
+                h = s = 0;
+            } else {
+                let d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+                switch (max) {
+                    case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                    case g: h = (b - r) / d + 2; break;
+                    case b: h = (r - g) / d + 4; break;
+                }
+                h /= 6;
+            }
+            return { h: h * 360, s: s * 100, l: l * 100 };
+        }
+        
+        function changeColorSaturation(hex, newSaturation) {
+            const rgb = hexToRgb(hex);
+            const hsl = rgbToHsl(rgb);
+            return `hsl(${hsl.h}, ${newSaturation}%, ${hsl.l}%)`;
+        }
+
+        // --- EVENT LISTENERS ---
+        addProjectBtn.addEventListener('click', () => openModal());
+        cancelBtn.addEventListener('click', closeModal);
+        projectForm.addEventListener('submit', handleFormSubmit);
+        deleteProjectBtn.addEventListener('click', handleDeleteProject);
+        addTaskBtn.addEventListener('click', handleAddTask);
+        newTaskInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') { e.preventDefault(); handleAddTask(); }});
+        taskList.addEventListener('change', handleTaskToggle);
+        taskList.addEventListener('click', handleTaskDelete);
+        
+        cancelDeleteBtn.addEventListener('click', () => {
+            confirmModal.style.display = 'none';
+        });
+
+        confirmDeleteBtn.addEventListener('click', async () => {
+            const id = document.getElementById('projectId').value;
+            if (id) {
+                const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, id);
+                await deleteDoc(projectRef);
+
+                projects.forEach(p => {
+                    if (p.connections && p.connections.includes(id)) {
+                        const updatedConnections = p.connections.filter(connId => connId !== id);
+                        saveProject({...p, connections: updatedConnections}, p.id);
+                    }
+                });
+                closeModal();
+                confirmModal.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                confirmModal.style.display = 'none';
+            }
+        });
+        
+        // --- INITIALIZATION ---
+        initializeFirebase();
+
+    </script>
+</body>
+</html>
